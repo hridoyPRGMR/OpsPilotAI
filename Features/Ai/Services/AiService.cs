@@ -3,50 +3,79 @@ namespace Features.Ai.Services
     public class AiService
     {
         private readonly HttpClient _httpClient;
+        private readonly ILogger<AiService> _logger;
+        private readonly string _model = "qwen2.5-coder";
+        private readonly string _ollamaBaseUrl = "http://localhost:11434";
 
-        public AiService(HttpClient httpClient)
+        public AiService(HttpClient httpClient, ILogger<AiService> logger)
         {
             _httpClient = httpClient;
+            _logger = logger;
         }
 
-        public async Task<string> AskAsync(string prompt)
+        public async Task<string> GenerateSqlAsync(string prompt)
         {
             try
             {
                 var request = new
                 {
+                    model = _model,
                     prompt = prompt,
-                    n_predict = 200,
-                    temperature = 0.2
+                    stream = false,
+                    temperature = 0.3,
+                    top_p = 0.9,
+                    num_predict = 500
                 };
 
+                _logger.LogInformation("Calling Ollama for SQL generation");
+
                 var response = await _httpClient.PostAsJsonAsync(
-                    "http://localhost:8080/completion",
+                    $"{_ollamaBaseUrl}/api/generate",
                     request);
 
-                response.EnsureSuccessStatusCode();
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Ollama request failed: {StatusCode}", response.StatusCode);
+                    return string.Empty;
+                }
 
-                var result = await response.Content.ReadFromJsonAsync<LlamaResponse>();
+                var result = await response.Content.ReadFromJsonAsync<OllamaGenerateResponse>();
 
-                return result?.Content ?? "No response";
+                if (result?.Response == null)
+                {
+                    _logger.LogError("Empty response from Ollama");
+                    return string.Empty;
+                }
+
+                _logger.LogInformation("SQL generation complete");
+                return result.Response.Trim();
             }
             catch (TaskCanceledException ex)
             {
-                return $"Request timed out: {ex.Message}";
+                _logger.LogError(ex, "Request timed out");
+                return string.Empty;
             }
             catch (HttpRequestException ex)
             {
-                return $"HTTP error: {ex.Message}";
+                _logger.LogError(ex, "HTTP error");
+                return string.Empty;
             }
             catch (Exception ex)
             {
-                return $"Unexpected error: {ex.Message}";
+                _logger.LogError(ex, "Unexpected error during SQL generation");
+                return string.Empty;
             }
         }
 
-        public class LlamaResponse
+        public async Task<string> AskAsync(string prompt)
         {
-            public string Content { get; set; } = "";
+            return await GenerateSqlAsync(prompt);
+        }
+
+        private class OllamaGenerateResponse
+        {
+            public string Response { get; set; } = string.Empty;
+            public string Model { get; set; } = string.Empty;
         }
     }
 }

@@ -1,48 +1,62 @@
 using Microsoft.AspNetCore.Mvc;
 using OpsPilotAI.Features.SchemaExtractor.Services;
+using OpsPilotAI.Features.Ai.Services;
+using Features.Ai.Services;
 
 namespace OpsPilotAI.Controllers
 {
-    [ApiController, Route("api/test")]
-    public class TestController(SchemaExtractorService _schemaExtractor) : ControllerBase
+    [ApiController, Route("test")]
+    public class TestController(
+        SchemaExtractorService _schemaExtractor,
+        SchemaBuilderService _schemaBuilder,
+        RelationshipGraphService _relationshipGraph
+        ) : ControllerBase
     {
 
-        [HttpGet("test/tables")]
+        [HttpGet("tables")]
         public async Task<IActionResult> TestTables()
         {
             var tables = await _schemaExtractor.GetTablesAsync();
             return Ok(tables);
         }
 
-        [HttpGet("test/columns/{table}")]
+        [HttpGet("columns/{table}")]
         public async Task<IActionResult> TestColumns(string table)
         {
             var columns = await _schemaExtractor.GetColumnsAsync(table);
             return Ok(columns);
         }
 
-        [HttpGet("test/relations")]
+        [HttpGet("relationships")]
         public async Task<IActionResult> TestRelations()
         {
             var relations = await _schemaExtractor.GetRelationshipsAsync();
             return Ok(relations);
         }
 
-        [HttpGet("test/schema")]
+        [HttpGet("schema")]
         public async Task<IActionResult> TestSchema()
         {
             var schema = await _schemaExtractor.ExtractSchemaAsync();
             return Ok(schema);
         }
 
-        // [HttpGet("test/semantic")]
-        // public async Task<IActionResult> TestSemantic()
-        // {
-        //     var schema = await _schemaExtractor.ExtractSchemaAsync();
+        [HttpGet("semantic")]
+        public async Task<IActionResult> TestSemantic()
+        {
+            var schema = await _schemaExtractor.ExtractSchemaAsync();
+            var graph = await _relationshipGraph.GetGraphAsync();
 
-        //     var docs = schema.Select(_schemaBuilder.BuildSemanticDocument);
+            var docs = _schemaBuilder.BuildSemanticDocuments(schema, graph);
 
-        //     return Ok(docs);
-        // }
+            return Ok(docs);
+        }
+
+        [HttpGet("graph")]
+        public async Task<IActionResult> TestGraph()
+        {
+            var graph = await _relationshipGraph.GetGraphAsync();
+            return Ok(graph);
+        }
     }
 }

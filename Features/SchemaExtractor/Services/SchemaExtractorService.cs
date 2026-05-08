@@ -40,10 +40,23 @@ namespace OpsPilotAI.Features.SchemaExtractor.Services
                         FROM information_schema.table_constraints tc
                         JOIN information_schema.key_column_usage kcu
                             ON tc.constraint_name = kcu.constraint_name
-                        WHERE tc.table_name = c.table_name
+                            AND tc.table_schema = kcu.table_schema
+                        WHERE tc.table_schema = c.table_schema
+                        AND tc.table_name = c.table_name
                         AND tc.constraint_type = 'PRIMARY KEY'
                         AND kcu.column_name = c.column_name
-                    ) AS is_primary_key
+                    ) AS is_primary_key,
+                    EXISTS (
+                        SELECT 1
+                        FROM information_schema.table_constraints tc
+                        JOIN information_schema.key_column_usage kcu
+                            ON tc.constraint_name = kcu.constraint_name
+                            AND tc.table_schema = kcu.table_schema
+                        WHERE tc.table_schema = c.table_schema
+                        AND tc.table_name = c.table_name
+                        AND tc.constraint_type = 'FOREIGN KEY'
+                        AND kcu.column_name = c.column_name
+                    ) AS is_foreign_key
                 FROM information_schema.columns c
                 WHERE c.table_name = @TableName
                 ORDER BY c.ordinal_position;
@@ -58,7 +71,8 @@ namespace OpsPilotAI.Features.SchemaExtractor.Services
                 Name = x.Column_Name,
                 DataType = x.Data_Type,
                 IsNullable = x.Is_Nullable == "YES",
-                IsPrimaryKey = x.Is_Primary_Key
+                IsPrimaryKey = x.Is_Primary_Key,
+                IsForeignKey = x.Is_Foreign_Key
             })];
         }
 

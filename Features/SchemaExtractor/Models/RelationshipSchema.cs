@@ -9,5 +9,7 @@ namespace OpsPilotAI.Features.SchemaExtractor.Models
         public string ToTable { get; set; } = string.Empty;
 
         public string ToColumn { get; set; } = string.Empty;
+
+        public bool IsInferred { get; set; }
     }
 }
