@@ -1,18 +1,18 @@
-using System.Net.Http.Json;
+using Dapper;
+using Npgsql;
 using OpsPilotAI.Features.Ai.Models;
 
 namespace OpsPilotAI.Features.Ai.Services
 {
     public class VectorDatabaseService
     {
-        private readonly HttpClient _httpClient;
+        private readonly NpgsqlDataSource _dataSource;
         private readonly ILogger<VectorDatabaseService> _logger;
-        private readonly string _qdrantBaseUrl = "http://localhost:6333";
-        private readonly string _collectionName = "schema_embeddings";
+        private const string TableName = "schema_embeddings";
 
-        public VectorDatabaseService(HttpClient httpClient, ILogger<VectorDatabaseService> logger)
+        public VectorDatabaseService(NpgsqlDataSource dataSource, ILogger<VectorDatabaseService> logger)
         {
-            _httpClient = httpClient;
+            _dataSource = dataSource;
             _logger = logger;
         }
 
@@ -20,38 +20,38 @@ namespace OpsPilotAI.Features.Ai.Services
         {
             try
             {
-                var collections = await GetCollectionsAsync();
-                if (collections.Contains(_collectionName))
+                await using var connection = await _dataSource.OpenConnectionAsync();
+
+                var tableExists = await connection.QueryFirstOrDefaultAsync<int>(
+                    $"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{TableName}')");
+
+                if (tableExists == 1)
                 {
-                    _logger.LogInformation("Collection {Name} already exists", _collectionName);
+                    _logger.LogInformation("Table {Name} already exists", TableName);
                     return true;
                 }
 
-                var request = new
-                {
-                    vectors = new
-                    {
-                        size = 768,
-                        distance = "Cosine"
-                    }
-                };
+                var createTableSql = $"""
+                    CREATE TABLE IF NOT EXISTS {TableName} (
+                        id TEXT PRIMARY KEY,
+                        table_name TEXT NOT NULL,
+                        schema_text TEXT NOT NULL,
+                        embedding vector(768) NOT NULL,
+                        metadata JSONB,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_schema_embeddings_embedding 
+                        ON {TableName} USING ivfflat (embedding vector_cosine_ops)
+                        WITH (lists = 100);
+                    """;
 
-                var response = await _httpClient.PutAsJsonAsync(
-                    $"{_qdrantBaseUrl}/collections/{_collectionName}",
-                    request);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    _logger.LogInformation("Created collection {Name}", _collectionName);
-                    return true;
-                }
-
-                _logger.LogError("Failed to create collection: {StatusCode}", response.StatusCode);
-                return false;
+                await connection.ExecuteAsync(createTableSql);
+                _logger.LogInformation("Created table {Name}", TableName);
+                return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error initializing collection");
+                _logger.LogError(ex, "Error initializing table");
                 return false;
             }
         }
@@ -60,25 +60,32 @@ namespace OpsPilotAI.Features.Ai.Services
         {
             try
             {
-                var point = new
-                {
-                    id = pointId,
-                    vector = embedding.Vector,
-                    payload = new
+                await using var connection = await _dataSource.OpenConnectionAsync();
+
+                var upsertSql = $"""
+                    INSERT INTO {TableName} (id, table_name, schema_text, embedding, metadata)
+                    VALUES (@Id, @TableName, @SchemaText, @Embedding, @Metadata)
+                    ON CONFLICT (id) DO UPDATE SET
+                        table_name = EXCLUDED.table_name,
+                        schema_text = EXCLUDED.schema_text,
+                        embedding = EXCLUDED.embedding,
+                        metadata = EXCLUDED.metadata;
+                    """;
+
+                var embeddingText = string.Join(",", embedding.Vector);
+
+                var result = await connection.ExecuteAsync(
+                    upsertSql,
+                    new
                     {
-                        table_name = embedding.TableName,
-                        schema_text = embedding.SchemaText,
-                        metadata = embedding.Metadata
-                    }
-                };
+                        Id = pointId,
+                        TableName = embedding.TableName,
+                        SchemaText = embedding.SchemaText,
+                        Embedding = embeddingText,
+                        Metadata = System.Text.Json.JsonSerializer.Serialize(embedding.Metadata)
+                    });
 
-                var request = new { points = new[] { point } };
-
-                var response = await _httpClient.PutAsJsonAsync(
-                    $"{_qdrantBaseUrl}/collections/{_collectionName}/points",
-                    request);
-
-                return response.IsSuccessStatusCode;
+                return result > 0;
             }
             catch (Exception ex)
             {
@@ -91,54 +98,30 @@ namespace OpsPilotAI.Features.Ai.Services
         {
             try
             {
-                var request = new
-                {
-                    vector = queryVector,
-                    limit = topK,
-                    with_payload = true
-                };
+                await using var connection = await _dataSource.OpenConnectionAsync();
 
-                var response = await _httpClient.PostAsJsonAsync(
-                    $"{_qdrantBaseUrl}/collections/{_collectionName}/points/search",
-                    request);
+                var queryVectorText = string.Join(",", queryVector);
 
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogError("Search failed: {StatusCode}", response.StatusCode);
-                    return new List<VectorSearchResult>();
-                }
+                var searchSql = $"""
+                    SELECT 
+                        table_name,
+                        schema_text,
+                        1 - (embedding <=> '[{queryVectorText}]'::vector) AS score
+                    FROM {TableName}
+                    ORDER BY embedding <=> '[{queryVectorText}]'::vector
+                    LIMIT @TopK;
+                    """;
 
-                var result = await response.Content.ReadFromJsonAsync<QdrantSearchResponse>();
-                return result?.Result?.Select(r => new VectorSearchResult
-                {
-                    TableName = r.Payload?.table_name ?? string.Empty,
-                    SchemaText = r.Payload?.schema_text ?? string.Empty,
-                    Score = r.Score
-                }).ToList() ?? new List<VectorSearchResult>();
+                var results = await connection.QueryAsync<VectorSearchResult>(
+                    searchSql,
+                    new { TopK = topK });
+
+                return results.ToList();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error searching vectors");
                 return new List<VectorSearchResult>();
-            }
-        }
-
-        private async Task<List<string>> GetCollectionsAsync()
-        {
-            try
-            {
-                var response = await _httpClient.GetAsync($"{_qdrantBaseUrl}/collections");
-                if (!response.IsSuccessStatusCode)
-                {
-                    return new List<string>();
-                }
-
-                var result = await response.Content.ReadFromJsonAsync<QdrantCollectionsResponse>();
-                return result?.Collections?.Select(c => c.name).ToList() ?? new List<string>();
-            }
-            catch
-            {
-                return new List<string>();
             }
         }
 
@@ -148,32 +131,6 @@ namespace OpsPilotAI.Features.Ai.Services
             public string SchemaText { get; set; } = string.Empty;
             public float Score { get; set; }
         }
-
-        private class QdrantSearchResponse
-        {
-            public List<SearchPoint> Result { get; set; } = new();
-        }
-
-        private class SearchPoint
-        {
-            public float Score { get; set; }
-            public SearchPayload Payload { get; set; }
-        }
-
-        private class SearchPayload
-        {
-            public string table_name { get; set; }
-            public string schema_text { get; set; }
-        }
-
-        private class QdrantCollectionsResponse
-        {
-            public List<CollectionInfo> Collections { get; set; } = new();
-        }
-
-        private class CollectionInfo
-        {
-            public string name { get; set; }
-        }
     }
 }
+

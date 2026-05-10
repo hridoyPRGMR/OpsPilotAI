@@ -8,7 +8,7 @@ namespace OpsPilotAI.Features.Ai.Services
         private readonly HttpClient _httpClient;
         private readonly ILogger<EmbeddingService> _logger;
         private readonly string _embeddingModel = "nomic-embed-text";
-        private readonly string _ollamaBaseUrl = "http://localhost:11434";
+        private readonly string _ollamaBaseUrl = "http://localhost:8081/embeddings";
 
         public EmbeddingService(HttpClient httpClient, ILogger<EmbeddingService> logger)
         {

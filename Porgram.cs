@@ -18,10 +18,6 @@ builder.Services.AddHttpClient<EmbeddingService>(client =>
 {
     client.Timeout = TimeSpan.FromMinutes(2);
 });
-builder.Services.AddHttpClient<VectorDatabaseService>(client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(2);
-});
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<SchemaExtractorService>();
 builder.Services.AddScoped<SchemaBuilderService>();
