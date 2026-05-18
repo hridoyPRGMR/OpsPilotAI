@@ -30,7 +30,7 @@ builder.Services.AddScoped<SqlValidatorService>();
 builder.Services.AddScoped<ExecutionService>();
 builder.Services.AddScoped<QueryOrchestrationService>();
 
-var connectionString = builder.Configuration.GetConnectionString("Default") ?? throw new InvalidOperationException("Connection string 'Default' not found.");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'Default' not found.");
 builder.Services.AddNpgsqlDataSource(connectionString);
 
 var app = builder.Build();

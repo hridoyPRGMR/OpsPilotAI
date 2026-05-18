@@ -292,6 +292,37 @@ dotnet add package Npgsql
 
 ## Troubleshooting
 
+### Docker (WSL): Postgres + pgvector
+
+If you run PostgreSQL inside Docker on WSL, here's a minimal setup and troubleshooting notes used by this project.
+
+- Start the database (run from the project root in WSL):
+
+```bash
+cp .env.example .env
+# edit .env if you change credentials
+docker compose up -d
+```
+
+- Check container status and logs:
+
+```bash
+docker compose ps
+docker compose logs -f db
+```
+
+- Verify pgvector is installed and the init script ran:
+
+```bash
+docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT extname FROM pg_extension;"
+docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "\dt"
+```
+
+- Notes:
+  - The init script `sql/01_pgvector_setup.sql` runs only when the DB data directory is initialized. If you change the SQL and need it re-run, remove the `pgdata` folder then run `docker compose down` and `docker compose up -d` to recreate the container and re-run initialization.
+  - Ensure your WSL distro has access to Docker (Docker Desktop WSL backend or Docker in WSL). If using Docker Desktop, confirm the WSL integration is enabled.
+  - Update the connection string in `appsettings.Development.json` if you change credentials, host, or port.
+
 **Issue: Connection refused to PostgreSQL**
 - Ensure PostgreSQL is running: `sudo systemctl start postgresql`
 - Verify connection string in `appsettings.json`
