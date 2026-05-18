@@ -62,9 +62,10 @@ namespace OpsPilotAI.Features.Ai.Services
             {
                 await using var connection = await _dataSource.OpenConnectionAsync();
 
+                // 1. Keep parameters lowercase and cleanly defined
                 var upsertSql = $"""
                     INSERT INTO {TableName} (id, table_name, schema_text, embedding, metadata)
-                    VALUES (@Id, @TableName, @SchemaText, @Embedding, @Metadata)
+                    VALUES (@id, @table_name, @schema_text, @embedding::vector, @metadata::jsonb)
                     ON CONFLICT (id) DO UPDATE SET
                         table_name = EXCLUDED.table_name,
                         schema_text = EXCLUDED.schema_text,
@@ -72,24 +73,40 @@ namespace OpsPilotAI.Features.Ai.Services
                         metadata = EXCLUDED.metadata;
                     """;
 
-                var embeddingText = string.Join(",", embedding.Vector);
+                // 2. Let Npgsql handle the float[] native translation if pgvector is registered,
+                // or safely pass the float[] array. If your column is strictly expecting text parsing, 
+                // keep string.Join but map it to a strictly matching parameter.
+                var metadataJson = System.Text.Json.JsonSerializer.Serialize(embedding.Metadata);
 
+                _logger.LogDebug("Upserting embedding for {TableName} with vector length {Length}", embedding.TableName, embedding.Vector.Length);
+
+                // 3. Keep parameter properties perfectly matching the SQL variables
                 var result = await connection.ExecuteAsync(
                     upsertSql,
                     new
                     {
-                        Id = pointId,
-                        TableName = embedding.TableName,
-                        SchemaText = embedding.SchemaText,
-                        Embedding = embeddingText,
-                        Metadata = System.Text.Json.JsonSerializer.Serialize(embedding.Metadata)
+                        id = pointId,
+                        table_name = embedding.TableName,
+                        schema_text = embedding.SchemaText,
+                        embedding = embedding.Vector, // Pass the float array directly or use embeddingText
+                        metadata = metadataJson
                     });
 
-                return result > 0;
+                // 4. IMPORTANT NOTE ON UPSERTS: 
+                // On PostgreSQL, an "UPDATE" that changes nothing due to matching data can return 0 rows affected.
+                // If you are verifying a true database write success, check if result >= 0 instead of strict > 0.
+                if (result >= 0)
+                {
+                    _logger.LogInformation("Successfully processed upsert for {TableName} (ID: {PointId}). Rows affected: {Result}", embedding.TableName, pointId, result);
+                    return true;
+                }
+
+                _logger.LogWarning("Upsert for {TableName} returned unexpected row count: {RowCount}", embedding.TableName, result);
+                return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error upserting embedding");
+                _logger.LogError(ex, "Error upserting embedding for {TableName}: {Message}\n{StackTrace}", embedding?.TableName ?? "unknown", ex.Message, ex.StackTrace);
                 return false;
             }
         }
@@ -100,27 +117,30 @@ namespace OpsPilotAI.Features.Ai.Services
             {
                 await using var connection = await _dataSource.OpenConnectionAsync();
 
-                var queryVectorText = string.Join(",", queryVector);
+                var queryVectorText = $"[{string.Join(",", queryVector)}]";
 
                 var searchSql = $"""
                     SELECT 
                         table_name,
                         schema_text,
-                        1 - (embedding <=> '[{queryVectorText}]'::vector) AS score
+                        1 - (embedding <=> @QueryVector::vector) AS score
                     FROM {TableName}
-                    ORDER BY embedding <=> '[{queryVectorText}]'::vector
+                    ORDER BY embedding <=> @QueryVector::vector
                     LIMIT @TopK;
                     """;
 
+                _logger.LogDebug("Searching vectors with query vector length {Length}, topK {TopK}", queryVector.Length, topK);
+
                 var results = await connection.QueryAsync<VectorSearchResult>(
                     searchSql,
-                    new { TopK = topK });
+                    new { QueryVector = queryVectorText, TopK = topK });
 
+                _logger.LogInformation("Vector search returned {ResultCount} results", results.Count());
                 return results.ToList();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error searching vectors");
+                _logger.LogError(ex, "Error searching vectors: {Message}\n{StackTrace}", ex.Message, ex.StackTrace);
                 return new List<VectorSearchResult>();
             }
         }

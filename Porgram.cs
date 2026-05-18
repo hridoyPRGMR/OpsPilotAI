@@ -1,6 +1,7 @@
 using Features.Ai.Services;
 using OpsPilotAI.Features.SchemaExtractor.Services;
 using OpsPilotAI.Features.Ai.Services;
+using OpsPilotAI.Infrastructure;
 using Scalar.AspNetCore;
 
 
@@ -30,10 +31,13 @@ builder.Services.AddScoped<SqlValidatorService>();
 builder.Services.AddScoped<ExecutionService>();
 builder.Services.AddScoped<QueryOrchestrationService>();
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'Default' not found.");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddNpgsqlDataSource(connectionString);
 
 var app = builder.Build();
+
+// Add global exception handling middleware (should be first in the pipeline)
+app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

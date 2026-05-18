@@ -1,16 +1,22 @@
+using Microsoft.Extensions.Configuration;
+
 namespace Features.Ai.Services
 {
     public class AiService
     {
         private readonly HttpClient _httpClient;
         private readonly ILogger<AiService> _logger;
-        private readonly string _model = "qwen2.5-coder";
-        private readonly string _ollamaBaseUrl = "http://localhost:11434";
+        private readonly string _model;
+        private readonly string _sqlBaseUrl;
 
-        public AiService(HttpClient httpClient, ILogger<AiService> logger)
+        public AiService(HttpClient httpClient, ILogger<AiService> logger, IConfiguration configuration)
         {
             _httpClient = httpClient;
             _logger = logger;
+
+            var llamaSection = configuration.GetSection("Llama");
+            _model = llamaSection.GetValue<string>("SqlModel") ?? throw new InvalidOperationException("Llama SQL model is not configured.");
+            _sqlBaseUrl = llamaSection.GetValue<string>("SqlBaseUrl") ?? throw new InvalidOperationException("Llama SQL base URL is not configured.");
         }
 
         public async Task<string> GenerateSqlAsync(string prompt)
@@ -27,23 +33,23 @@ namespace Features.Ai.Services
                     num_predict = 500
                 };
 
-                _logger.LogInformation("Calling Ollama for SQL generation");
+                _logger.LogInformation("Calling llama.cpp for SQL generation");
 
                 var response = await _httpClient.PostAsJsonAsync(
-                    $"{_ollamaBaseUrl}/api/generate",
+                    $"{_sqlBaseUrl}/sql",
                     request);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogError("Ollama request failed: {StatusCode}", response.StatusCode);
+                    _logger.LogError("llama.cpp request failed: {StatusCode}", response.StatusCode);
                     return string.Empty;
                 }
 
-                var result = await response.Content.ReadFromJsonAsync<OllamaGenerateResponse>();
+                var result = await response.Content.ReadFromJsonAsync<LlamaGenerateResponse>();
 
                 if (result?.Response == null)
                 {
-                    _logger.LogError("Empty response from Ollama");
+                    _logger.LogError("Empty response from llama.cpp");
                     return string.Empty;
                 }
 
@@ -72,7 +78,7 @@ namespace Features.Ai.Services
             return await GenerateSqlAsync(prompt);
         }
 
-        private class OllamaGenerateResponse
+        private class LlamaGenerateResponse
         {
             public string Response { get; set; } = string.Empty;
             public string Model { get; set; } = string.Empty;

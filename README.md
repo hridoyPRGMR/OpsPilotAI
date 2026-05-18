@@ -15,7 +15,7 @@ The primary goal of OpsPilotAI is to:
 ## Key Features
 
 ✅ **Natural Language to SQL**
-- Converts user questions into SQL queries using Qwen2.5-Coder LLM via Ollama
+- Converts user questions into SQL queries using Qwen2.5-Coder LLM via llama.cpp
 
 ✅ **Schema Intelligence**
 - Automatically extracts PostgreSQL database schema (tables, columns, relationships)
@@ -44,7 +44,7 @@ The primary goal of OpsPilotAI is to:
 | Framework | .NET 10 ASP.NET Core Web API |
 | Database | PostgreSQL with pgvector extension (768 dimensions) |
 | Vector Distance | Cosine similarity |
-| LLM | Qwen2.5-Coder via Ollama |
+| LLM | Qwen2.5-Coder via llama.cpp |
 | Embeddings | nomic-embed-text (768 dimensions) |
 | ORM | Dapper |
 
@@ -95,7 +95,7 @@ OpsPilotAI/
 - `RetrieverService` - Manages vector database population and retrieval
 
 **AI Services:**
-- `EmbeddingService` - Generates vector embeddings via Ollama
+- `EmbeddingService` - Generates vector embeddings via llama.cpp
 - `VectorDatabaseService` - Stores/retrieves embeddings from PostgreSQL pgvector
 - `PromptBuilderService` - Constructs structured prompts with relevant schema
 - `AiService` - Calls LLM (Qwen2.5-Coder) for SQL generation
@@ -114,8 +114,8 @@ Ensure you have the following installed and running:
    - Run: `CREATE EXTENSION IF NOT EXISTS vector;`
    - Sample database: opspilotdb
 
-2. **Ollama** (for AI inference)
-   - Download from https://ollama.ai
+2. **llama.cpp** (for AI inference)
+   - Configure a llama.cpp-compatible HTTP API endpoint for model inference
    - Required models:
      - `qwen2.5-coder` - SQL generation
      - `nomic-embed-text` - Text embeddings (768 dimensions)
@@ -138,8 +138,9 @@ Ensure you have the following installed and running:
      "ConnectionStrings": {
        "DefaultConnection": "Host=localhost;Port=5433;Database=opspilotdb;Username=opspilot;Password=opspilot_pass"
      },
-     "Ollama": {
-       "BaseUrl": "http://localhost:11434",
+     "Llama": {
+       "SqlBaseUrl": "http://127.0.0.1:8080",
+       "EmbeddingBaseUrl": "http://127.0.0.1:8081",
        "SqlModel": "qwen2.5-coder",
        "EmbeddingModel": "nomic-embed-text"
      }
@@ -153,15 +154,9 @@ Ensure you have the following installed and running:
    psql -U opspilot -d opspilotdb -f sql/01_init.sql
    ```
 
-4. **Start Ollama**
-   ```bash
-   ollama serve
-   ```
-   In another terminal, pull required models:
-   ```bash
-   ollama pull qwen2.5-coder
-   ollama pull nomic-embed-text
-   ```
+4. **Start your llama.cpp service**
+   - Launch your llama.cpp HTTP API server according to your wrapper implementation.
+   - Ensure the service is reachable at the URL configured in `appsettings.json`.
 
 5. **Run the Application**
    ```bash
@@ -248,8 +243,9 @@ Return Results
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Port=5433;Database=opspilotdb;Username=opspilot;Password=opspilot_pass"
   },
-  "Ollama": {
-    "BaseUrl": "http://localhost:11434",
+  "Llama": {
+    "SqlBaseUrl": "http://127.0.0.1:8080",
+    "EmbeddingBaseUrl": "http://127.0.0.1:8081",
     "SqlModel": "qwen2.5-coder",
     "EmbeddingModel": "nomic-embed-text"
   },
@@ -327,10 +323,10 @@ docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "\dt"
 - Ensure PostgreSQL is running: `sudo systemctl start postgresql`
 - Verify connection string in `appsettings.json`
 
-**Issue: Ollama connection failed**
-- Ensure Ollama is running: `ollama serve`
-- Verify models are available: `ollama list`
-- Check BaseUrl matches your Ollama installation
+**Issue: llama.cpp connection failed**
+- Ensure your llama.cpp HTTP API service is running
+- Verify the configured model is available on that server
+- Check `Llama:SqlBaseUrl` and `Llama:EmbeddingBaseUrl` match your service endpoints
 
 **Issue: Vectors not retrieving results**
 - Ensure `sql/01_init.sql` was executed

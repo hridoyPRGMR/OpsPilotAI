@@ -61,42 +61,66 @@ namespace OpsPilotAI.Features.Ai.Services
                 }
 
                 var schema = await _schemaExtractor.ExtractSchemaAsync();
-                var graph = new Dictionary<string, List<OpsPilotAI.Features.SchemaExtractor.Models.RelationshipSchema>>();
+                _logger.LogInformation("Extracted {TableCount} tables from schema", schema.Count);
 
                 int pointId = 1;
+                int successCount = 0;
+                int failureCount = 0;
+
                 foreach (var table in schema)
                 {
-                    var semanticDoc = BuildSimpleSemanticDoc(table);
-                    var vector = await _embeddingService.EmbedTextAsync(semanticDoc);
-
-                    if (vector.Length == 0)
+                    try
                     {
-                        _logger.LogWarning("Failed to embed table {TableName}", table.TableName);
-                        continue;
-                    }
+                        _logger.LogInformation("Processing table {TableName} (ID: {PointId})", table.TableName, pointId);
 
-                    var embedding = new OpsPilotAI.Features.Ai.Models.EmbeddingModel
-                    {
-                        TableName = table.TableName,
-                        SchemaText = semanticDoc,
-                        Vector = vector,
-                        Metadata = new Dictionary<string, object>
+                        var semanticDoc = BuildSimpleSemanticDoc(table);
+                        _logger.LogDebug("Semantic doc for {TableName}: {Doc}", table.TableName, semanticDoc);
+
+                        var vector = await _embeddingService.EmbedTextAsync(semanticDoc);
+
+                        if (vector.Length == 0)
                         {
-                            { "columns_count", table.Columns.Count },
-                            { "relationships_count", table.Relationships.Count }
+                            _logger.LogError("Failed to embed table {TableName} - embedding returned empty array", table.TableName);
+                            failureCount++;
+                            pointId++;
+                            continue;
                         }
-                    };
 
-                    await _vectorDb.UpsertEmbeddingAsync(pointId.ToString(), embedding);
-                    pointId++;
+                        _logger.LogInformation("Successfully embedded {TableName} - vector length: {VectorLength}", table.TableName, vector.Length);
+
+                        var embedding = new OpsPilotAI.Features.Ai.Models.EmbeddingModel
+                        {
+                            TableName = table.TableName,
+                            SchemaText = semanticDoc,
+                            Vector = vector,
+                            Metadata = new Dictionary<string, object>
+                            {
+                                { "columns_count", table.Columns.Count },
+                                { "relationships_count", table.Relationships.Count }
+                            }
+                        };
+
+                        await _vectorDb.UpsertEmbeddingAsync(pointId.ToString(), embedding);
+                        _logger.LogInformation("Successfully upserted embedding for {TableName}", table.TableName);
+                        successCount++;
+                    }
+                    catch (Exception tableEx)
+                    {
+                        _logger.LogError(tableEx, "Exception while processing table {TableName}: {Message}", table.TableName, tableEx.Message);
+                        failureCount++;
+                    }
+                    finally
+                    {
+                        pointId++;
+                    }
                 }
 
-                _logger.LogInformation("Vector database population complete");
-                return true;
+                _logger.LogInformation("Vector database population complete. Success: {SuccessCount}, Failures: {FailureCount}", successCount, failureCount);
+                return failureCount == 0;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error populating vector database");
+                _logger.LogError(ex, "Critical error populating vector database: {Message}\n{StackTrace}", ex.Message, ex.StackTrace);
                 return false;
             }
         }
