@@ -112,7 +112,7 @@ Ensure you have the following installed and running:
 1. **PostgreSQL 14+**
    - Must have pgvector extension installed
    - Run: `CREATE EXTENSION IF NOT EXISTS vector;`
-   - Sample database: dvdrental
+   - Sample database: opspilotdb
 
 2. **Ollama** (for AI inference)
    - Download from https://ollama.ai
@@ -132,11 +132,11 @@ Ensure you have the following installed and running:
 
 2. **Configure Database Connection**
    
-   Edit `appsettings.json`:
+   Edit `appsettings.json` and `appsettings.Development.json` to use the local Docker host port:
    ```json
    {
      "ConnectionStrings": {
-       "DefaultConnection": "Host=localhost;Port=5432;Database=dvdrental;Username=postgres;Password=root"
+       "DefaultConnection": "Host=localhost;Port=5433;Database=opspilotdb;Username=opspilot;Password=opspilot_pass"
      },
      "Ollama": {
        "BaseUrl": "http://localhost:11434",
@@ -148,9 +148,9 @@ Ensure you have the following installed and running:
 
 3. **Initialize Vector Database**
    
-   Run the setup SQL script:
+   If you are running Postgres via Docker Compose, the `sql/01_init.sql` script runs automatically on first boot. Otherwise, run:
    ```bash
-   psql -U postgres -d dvdrental -f sql/01_pgvector_setup.sql
+   psql -U opspilot -d opspilotdb -f sql/01_init.sql
    ```
 
 4. **Start Ollama**
@@ -246,7 +246,7 @@ Return Results
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=dvdrental;Username=postgres;Password=root"
+    "DefaultConnection": "Host=localhost;Port=5433;Database=opspilotdb;Username=opspilot;Password=opspilot_pass"
   },
   "Ollama": {
     "BaseUrl": "http://localhost:11434",
@@ -319,9 +319,9 @@ docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "\dt"
 ```
 
 - Notes:
-  - The init script `sql/01_pgvector_setup.sql` runs only when the DB data directory is initialized. If you change the SQL and need it re-run, remove the `pgdata` folder then run `docker compose down` and `docker compose up -d` to recreate the container and re-run initialization.
+  - The init script `sql/01_init.sql` runs only when the DB data directory is initialized. If you change the SQL and need it re-run, remove the `opspilot_pgdata` volume and run `docker compose down` and `docker compose up -d` to recreate the container and re-run initialization.
   - Ensure your WSL distro has access to Docker (Docker Desktop WSL backend or Docker in WSL). If using Docker Desktop, confirm the WSL integration is enabled.
-  - Update the connection string in `appsettings.Development.json` if you change credentials, host, or port.
+  - Update the connection string in `appsettings.Development.json` and `appsettings.json` if you change credentials, host, or port.
 
 **Issue: Connection refused to PostgreSQL**
 - Ensure PostgreSQL is running: `sudo systemctl start postgresql`
@@ -333,7 +333,7 @@ docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "\dt"
 - Check BaseUrl matches your Ollama installation
 
 **Issue: Vectors not retrieving results**
-- Ensure `sql/01_pgvector_setup.sql` was executed
+- Ensure `sql/01_init.sql` was executed
 - Check pgvector extension is installed: `CREATE EXTENSION vector;`
 - Populate vector DB: `POST /test/populate-vector-db`
 
