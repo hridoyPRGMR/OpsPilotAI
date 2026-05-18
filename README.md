@@ -371,9 +371,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-## Contributing
+<!-- ## Contributing
 
-[Add contribution guidelines here]
+[Add contribution guidelines here] -->
 
 ---
 
