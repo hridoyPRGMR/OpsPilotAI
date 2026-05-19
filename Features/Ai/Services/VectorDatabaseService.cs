@@ -1,6 +1,7 @@
 using Dapper;
 using Npgsql;
 using OpsPilotAI.Features.Ai.Models;
+using System.Globalization;
 
 namespace OpsPilotAI.Features.Ai.Services
 {
@@ -80,6 +81,8 @@ namespace OpsPilotAI.Features.Ai.Services
 
                 _logger.LogDebug("Upserting embedding for {TableName} with vector length {Length}", embedding.TableName, embedding.Vector.Length);
 
+                var embeddingText = $"[{string.Join(",", embedding.Vector.Select(v => v.ToString(CultureInfo.InvariantCulture)))}]";
+
                 // 3. Keep parameter properties perfectly matching the SQL variables
                 var result = await connection.ExecuteAsync(
                     upsertSql,
@@ -88,7 +91,7 @@ namespace OpsPilotAI.Features.Ai.Services
                         id = pointId,
                         table_name = embedding.TableName,
                         schema_text = embedding.SchemaText,
-                        embedding = embedding.Vector, // Pass the float array directly or use embeddingText
+                        embedding = embeddingText,
                         metadata = metadataJson
                     });
 
@@ -117,13 +120,13 @@ namespace OpsPilotAI.Features.Ai.Services
             {
                 await using var connection = await _dataSource.OpenConnectionAsync();
 
-                var queryVectorText = $"[{string.Join(",", queryVector)}]";
+                var queryVectorText = $"[{string.Join(",", queryVector.Select(v => v.ToString(CultureInfo.InvariantCulture)))}]";
 
                 var searchSql = $"""
                     SELECT 
-                        table_name,
-                        schema_text,
-                        1 - (embedding <=> @QueryVector::vector) AS score
+                        table_name AS "TableName",
+                        schema_text AS "SchemaText",
+                        1 - (embedding <=> @QueryVector::vector) AS "Score"
                     FROM {TableName}
                     ORDER BY embedding <=> @QueryVector::vector
                     LIMIT @TopK;
@@ -135,8 +138,23 @@ namespace OpsPilotAI.Features.Ai.Services
                     searchSql,
                     new { QueryVector = queryVectorText, TopK = topK });
 
-                _logger.LogInformation("Vector search returned {ResultCount} results", results.Count());
-                return results.ToList();
+                var resultsList = results.ToList();
+                _logger.LogInformation("Vector search returned {ResultCount} results", resultsList.Count);
+
+                foreach (var result in resultsList)
+                {
+                    var schemaPreview = result.SchemaText.Length > 120
+                        ? result.SchemaText[..120] + "..."
+                        : result.SchemaText;
+
+                    _logger.LogInformation(
+                        "Search result: Table={TableName}, Score={Score}, SchemaPreview={SchemaPreview}",
+                        result.TableName,
+                        result.Score,
+                        schemaPreview);
+                }
+
+                return resultsList;
             }
             catch (Exception ex)
             {

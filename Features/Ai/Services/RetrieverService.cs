@@ -73,7 +73,7 @@ namespace OpsPilotAI.Features.Ai.Services
                     {
                         _logger.LogInformation("Processing table {TableName} (ID: {PointId})", table.TableName, pointId);
 
-                        var semanticDoc = BuildSimpleSemanticDoc(table);
+                        var semanticDoc = _schemaExtractor.BuildSemanticDocument(table);
                         _logger.LogDebug("Semantic doc for {TableName}: {Doc}", table.TableName, semanticDoc);
 
                         var vector = await _embeddingService.EmbedTextAsync(semanticDoc);
@@ -125,12 +125,5 @@ namespace OpsPilotAI.Features.Ai.Services
             }
         }
 
-        private string BuildSimpleSemanticDoc(OpsPilotAI.Features.SchemaExtractor.Models.TableSchema table)
-        {
-            var doc = $"Table: {table.TableName}\n";
-            doc += "Columns: ";
-            doc += string.Join(", ", table.Columns.Select(c => c.Name));
-            return doc;
-        }
     }
 }

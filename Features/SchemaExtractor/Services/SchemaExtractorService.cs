@@ -150,16 +150,33 @@ namespace OpsPilotAI.Features.SchemaExtractor.Services
 
             foreach (var column in table.Columns)
             {
-                sb.AppendLine(
-                    $"- {column.Name} ({column.DataType})");
+                var constraints = new List<string>();
+                if (column.IsPrimaryKey)
+                {
+                    constraints.Add("PRIMARY KEY");
+                }
+                if (column.IsForeignKey)
+                {
+                    constraints.Add("FOREIGN KEY");
+                }
+                if (!column.IsNullable)
+                {
+                    constraints.Add("NOT NULL");
+                }
+                if (!string.IsNullOrEmpty(column.DefaultValue))
+                {
+                    constraints.Add($"DEFAULT {column.DefaultValue}");
+                }
+
+                var constraintText = constraints.Count > 0 ? $" [{string.Join(", ", constraints)}]" : string.Empty;
+                sb.AppendLine($"- {column.Name} ({column.DataType}){constraintText}");
             }
 
             sb.AppendLine("Relationships:");
 
             foreach (var rel in table.Relationships)
             {
-                sb.AppendLine(
-                    $"{rel.FromTable}.{rel.FromColumn} -> {rel.ToTable}.{rel.ToColumn}");
+                sb.AppendLine($"- {rel.FromTable}.{rel.FromColumn} -> {rel.ToTable}.{rel.ToColumn}");
             }
 
             return sb.ToString();
