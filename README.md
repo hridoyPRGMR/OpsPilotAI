@@ -197,13 +197,14 @@ Response:
 - `GET /test/graph` - Get relationship graph
 
 **Vector Retrieval:**
-- `GET /test/retrieve?query=...` - Retrieve top-5 relevant tables for a query
+- `GET /aitest/retrieve?query=...` - Retrieve top-5 relevant tables for a query
+- `POST /aitest/populate-vector-db` - Populate the vector database from current schema
 
 **Query Building & Validation:**
-- `POST /test/prompt` - Build prompt (body: `{"question":"..."}`)
-- `POST /test/generate-sql` - Generate SQL (body: `{"question":"..."}`)
-- `POST /test/validate-sql` - Validate SQL (body: `{"sql":"..."}`)
-- `POST /test/execute` - Execute SQL (body: `{"sql":"..."}`)
+- `POST /aitest/prompt` - Build prompt (body: `{"question":"..."}`)
+- `POST /aitest/generate-sql` - Generate SQL (body: `{"question":"..."}`)
+- `POST /aitest/validate-sql` - Validate SQL (body: `{"sql":"..."}`)
+- `POST /aitest/execute` - Execute SQL (body: `{"sql":"..."}`)
 
 ## How It Works
 
@@ -245,13 +246,10 @@ Return Results
   },
   "Llama": {
     "SqlBaseUrl": "http://127.0.0.1:8080",
+    "SqlEndpointPath": "v1/completions",
     "EmbeddingBaseUrl": "http://127.0.0.1:8081",
     "SqlModel": "qwen2.5-coder",
     "EmbeddingModel": "nomic-embed-text"
-  },
-  "VectorDb": {
-    "TopK": 5,
-    "SimilarityThreshold": 0.3
   }
 }
 ```
@@ -331,12 +329,12 @@ docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "\dt"
 **Issue: Vectors not retrieving results**
 - Ensure `sql/01_init.sql` was executed
 - Check pgvector extension is installed: `CREATE EXTENSION vector;`
-- Populate vector DB: `POST /test/populate-vector-db`
+- Populate vector DB: `POST /aitest/populate-vector-db`
 
 **Issue: SQL generation is inaccurate**
-- Review /test/retrieve to see which tables were selected
+- Review /aitest/retrieve to see which tables were selected
 - Check /test/semantic to verify schema documentation
-- Review the generated prompt: `POST /test/prompt`
+- Review the generated prompt: `POST /aitest/prompt`
 
 ## Future Enhancements
 
