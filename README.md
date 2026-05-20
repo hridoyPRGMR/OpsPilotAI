@@ -171,14 +171,16 @@ All settings live in `appsettings.json` (defaults) and `appsettings.Development.
     "DefaultConnection": "Host=localhost;Port=5433;Database=opspilotdb;Username=opspilot;Password=opspilot_pass"
   },
   "Llama": {
-    "SqlBaseUrl": "http://127.0.0.1:8080",
-    "SqlEndpointPath": "v1/completions",       // llama.cpp completion endpoint
-    "EmbeddingBaseUrl": "http://127.0.0.1:8081",
-    "EmbeddingEndpointPath": "v1/embeddings",  // llama.cpp embedding endpoint
+    "SqlBaseUrl": "http://127.0.0.1:8080",       // llama.cpp completion endpoint base URL
+    "EmbeddingBaseUrl": "http://127.0.0.1:8081",  // llama.cpp embedding endpoint base URL
     "SqlModel": "qwen2.5-coder",
     "EmbeddingModel": "nomic-embed-text",
     "SqlTimeoutSeconds": 300,
-    "EmbeddingTimeoutSeconds": 120
+    "EmbeddingTimeoutSeconds": 120,
+    "CompletionTemperature": 0.3,
+    "CompletionTopP": 0.9,
+    "CompletionNumPredict": 200,
+    "CompletionStream": false
   }
 }
 ```

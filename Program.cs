@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Options;
 using OpsPilotAI.Features.Query.Services;
 using OpsPilotAI.Features.Schema.Services;
 using OpsPilotAI.Features.VectorStore.Services;
@@ -49,37 +50,56 @@ try
         .AddNpgSql(connectionString, name: "postgresql", tags: ["db", "ready"]);
 
     // ── HTTP clients with resilience ───────────────────────────────────────────
-    // AddHttpClient + AddStandardResilienceHandler wires Polly v8:
-    //   - Retry (3x with exponential back-off)
-    //   - Circuit breaker
-    //   - Total request timeout
-    // Timeouts are configured per-client from LlamaOptions.
-    builder.Services
-        .AddHttpClient<IAiCompletionService, LlamaCompletionService>(
-            (sp, client) =>
-            {
-                var opts = sp.GetRequiredService<IOptions<LlamaOptions>>().Value;
-                client.Timeout = TimeSpan.FromSeconds(opts.SqlTimeoutSeconds);
-            })
-        .AddStandardResilienceHandler(opts =>
-        {
-            opts.Retry.MaxRetryAttempts = 2;
-            opts.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(6);
-        });
+
+    /// 1. AI Completion Client Configuration
+    var completionClientName = "LlamaCompletionClient";
 
     builder.Services
-        .AddHttpClient<IEmbeddingService, LlamaEmbeddingService>(
-            (sp, client) =>
-            {
-                var opts = sp.GetRequiredService<IOptions<LlamaOptions>>().Value;
-                client.Timeout = TimeSpan.FromSeconds(opts.EmbeddingTimeoutSeconds);
-            })
-        .AddStandardResilienceHandler(opts =>
+        .AddHttpClient<IAiCompletionService, LlamaCompletionService>(completionClientName, (sp, client) =>
         {
+            var opts = sp.GetRequiredService<IOptions<LlamaOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(opts.SqlTimeoutSeconds);
+        })
+        .AddStandardResilienceHandler();
+
+    builder.Services.AddOptions<HttpStandardResilienceOptions>($"{completionClientName}-standard")
+        .Configure<IOptions<LlamaOptions>>((opts, llamaOptionsWrapper) =>
+        {
+            var llamaOpts = llamaOptionsWrapper.Value;
+            var timeoutSpan = TimeSpan.FromSeconds(llamaOpts.SqlTimeoutSeconds);
+
             opts.Retry.MaxRetryAttempts = 2;
-            opts.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
+            opts.AttemptTimeout.Timeout = timeoutSpan;
+            opts.TotalRequestTimeout.Timeout = timeoutSpan * 3;
+
+            // FIX: Scale the circuit breaker sampling window to handle the long timeout
+            opts.CircuitBreaker.SamplingDuration = timeoutSpan * 2;
         });
 
+    // 2. Embedding Client Configuration
+    var embeddingClientName = "LlamaEmbeddingClient";
+
+    builder.Services
+        .AddHttpClient<IEmbeddingService, LlamaEmbeddingService>(embeddingClientName, (sp, client) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<LlamaOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(opts.EmbeddingTimeoutSeconds);
+        })
+        .AddStandardResilienceHandler();
+
+    builder.Services.AddOptions<HttpStandardResilienceOptions>($"{embeddingClientName}-standard")
+        .Configure<IOptions<LlamaOptions>>((opts, llamaOptionsWrapper) =>
+        {
+            var llamaOpts = llamaOptionsWrapper.Value;
+            var timeoutSpan = TimeSpan.FromSeconds(llamaOpts.EmbeddingTimeoutSeconds);
+
+            opts.Retry.MaxRetryAttempts = 2;
+            opts.AttemptTimeout.Timeout = timeoutSpan;
+            opts.TotalRequestTimeout.Timeout = timeoutSpan * 3;
+
+            // FIX: Scale the circuit breaker sampling window to handle the long timeout
+            opts.CircuitBreaker.SamplingDuration = timeoutSpan * 2;
+        });
     // ── Caching ────────────────────────────────────────────────────────────────
     builder.Services.AddMemoryCache();
 

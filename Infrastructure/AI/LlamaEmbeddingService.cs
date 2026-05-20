@@ -58,16 +58,22 @@ public sealed class LlamaEmbeddingService(
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // OpenAI-compatible: data[0].embedding
-            if (root.TryGetProperty("data", out var data) &&
-                data.ValueKind == JsonValueKind.Array &&
-                data.GetArrayLength() > 0 &&
-                data[0].TryGetProperty("embedding", out var dataEmb))
-                return ToFloatArray(dataEmb);
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                // OpenAI-compatible: data[0].embedding
+                if (root.TryGetProperty("data", out var data) &&
+                    data.ValueKind == JsonValueKind.Array &&
+                    data.GetArrayLength() > 0 &&
+                    data[0].TryGetProperty("embedding", out var dataEmb))
+                    return ToFloatArray(dataEmb);
 
-            // Direct: { "embedding": [...] }
-            if (root.TryGetProperty("embedding", out var emb))
-                return ToFloatArray(emb);
+                // Direct: { "embedding": [...] }
+                if (root.TryGetProperty("embedding", out var emb))
+                    return ToFloatArray(emb);
+
+                if (root.TryGetProperty("result", out var result))
+                    return ToFloatArray(result);
+            }
 
             // Ollama-compatible array of objects: [{ "embedding": [...] }]
             if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
@@ -79,9 +85,6 @@ public sealed class LlamaEmbeddingService(
                 if (first.TryGetProperty("embedding", out var arrEmb))
                     return ToFloatArray(arrEmb);
             }
-
-            if (root.TryGetProperty("result", out var result))
-                return ToFloatArray(result);
 
             return [];
         }

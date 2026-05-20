@@ -23,15 +23,15 @@ public sealed class LlamaCompletionService(
 
     public async Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        var request = new
-        {
-            model = _options.SqlModel,
-            prompt,
-            stream = false,
-            temperature = 0.3,
-            top_p = 0.9,
-            num_predict = 500
-        };
+            var request = new
+            {
+                model = _options.SqlModel,
+                prompt,
+                stream = _options.CompletionStream,
+                temperature = _options.CompletionTemperature,
+                top_p = _options.CompletionTopP,
+                num_predict = _options.CompletionNumPredict
+            };
 
         logger.LogInformation("Sending completion request to {Endpoint}", _options.SqlEndpointUrl);
 

@@ -36,6 +36,12 @@ public sealed class LlamaOptions
 
     public int EmbeddingTimeoutSeconds { get; init; } = 120;
 
+    // Completion tuning (configurable for local/dev)
+    public double CompletionTemperature { get; init; } = 0.3;
+    public double CompletionTopP { get; init; } = 0.9;
+    public int CompletionNumPredict { get; init; } = 200;
+    public bool CompletionStream { get; init; } = false;
+
     public string SqlEndpointUrl =>
         $"{SqlBaseUrl.TrimEnd('/')}/{SqlEndpointPath.TrimStart('/')}";
 
