@@ -23,7 +23,7 @@ public sealed class PromptBuilderService : IPromptBuilderService
         1. Generate ONLY a SELECT query — never UPDATE, DELETE, INSERT, DROP, ALTER, TRUNCATE, or EXEC.
         2. ALWAYS include a LIMIT clause (maximum 100 rows).
         3. Use only tables and columns that appear in the schema provided below.
-        4. Return ONLY the SQL query — no explanation, no markdown, no code fences.
+        4. Return ONLY the raw SQL query string on a single line. Do NOT include any explanations, markdown, code fences, or whitespace formatting characters like newlines (\n) or carriage returns (\r).
         5. Use standard PostgreSQL syntax.
         """;
 
