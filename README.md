@@ -2,373 +2,345 @@
 
 ## About This Project
 
-**OpsPilotAI** is a Text-to-SQL system that converts natural language questions into executable SQL queries using AI. It leverages a Retrieval-Augmented Generation (RAG) approach combined with vector embeddings to intelligently retrieve relevant database schema information and generate safe, accurate SQL queries.
+**OpsPilotAI** is a production-grade Text-to-SQL platform that converts natural language questions into executable SQL queries using AI. It uses a Retrieval-Augmented Generation (RAG) pipeline backed by PostgreSQL pgvector for semantic schema retrieval, and llama.cpp for local LLM inference — no cloud dependency required.
 
-### Project Goal
+### Project Goals
 
-The primary goal of OpsPilotAI is to:
 - Enable non-technical users to query databases using natural language
-- Provide intelligent, context-aware SQL generation using AI
-- Ensure database safety through SQL validation before execution
-- Demonstrate a production-ready architecture for text-to-SQL systems in .NET
+- Provide intelligent, context-aware SQL generation using a local LLM
+- Ensure database safety through SQL validation before any execution
+- Serve as a production-ready reference architecture for text-to-SQL systems in .NET 10
+
+---
 
 ## Key Features
 
-✅ **Natural Language to SQL**
-- Converts user questions into SQL queries using Qwen2.5-Coder LLM via llama.cpp
+- **Natural Language to SQL** — Converts questions into SQL using Qwen2.5-Coder via llama.cpp
+- **Schema Intelligence** — Extracts PostgreSQL schema (tables, columns, FKs) and builds AI-readable semantic documents enriched with business keywords and relationship graphs
+- **Vector-Based Retrieval** — Uses pgvector cosine similarity to find the most relevant tables for any question
+- **Safety-First Execution** — Blocks dangerous operations (DELETE, DROP, TRUNCATE, etc.) and enforces LIMIT clauses before any SQL runs
+- **Resilient HTTP** — Polly retry + circuit-breaker on all LLM/embedding calls
+- **Structured Logging** — Serilog with per-request correlation and file rolling
+- **Health Checks** — `/healthz` endpoint with PostgreSQL probe
+- **Containerised** — Multi-stage Dockerfile + Docker Compose for the full stack
 
-✅ **Schema Intelligence**
-- Automatically extracts PostgreSQL database schema (tables, columns, relationships)
-- Builds semantic documents with AI-readable database descriptions
-- Infers foreign key relationships for related table discovery
+---
 
-✅ **Vector-Based Retrieval**
-- Uses pgvector (PostgreSQL vector extension) for semantic similarity search
-- Retrieves top-K most relevant tables based on user query
-- Cosine distance metric for similarity calculations
-
-✅ **Safety-First Execution**
-- Validates SQL queries before execution
-- Blocks dangerous operations (DELETE, DROP, EXEC, etc.)
-- Enforces LIMIT clauses to prevent runaway queries
-
-✅ **Full Query Pipeline**
-- Schema Extraction → Semantic Indexing → Vector Retrieval → Prompt Building → SQL Generation → Validation → Execution
-
-## Architecture
-
-### Technology Stack
+## Technology Stack
 
 | Component | Technology |
-|-----------|-----------|
+|-----------|------------|
 | Framework | .NET 10 ASP.NET Core Web API |
-| Database | PostgreSQL with pgvector extension (768 dimensions) |
-| Vector Distance | Cosine similarity |
+| Database | PostgreSQL 15 + pgvector extension (768 dimensions) |
+| Vector distance | Cosine similarity (`<=>`) |
 | LLM | Qwen2.5-Coder via llama.cpp |
 | Embeddings | nomic-embed-text (768 dimensions) |
 | ORM | Dapper |
+| Logging | Serilog |
+| Resilience | Polly v8 via `Microsoft.Extensions.Http.Resilience` |
+| Health checks | `AspNetCore.HealthChecks.NpgSql` |
 
-### Project Structure
+---
+
+## Project Structure
 
 ```
 OpsPilotAI/
+├── Common/
+│   └── Exceptions/
+│       └── PipelineException.cs        # Domain failure type (surfaced as 422)
+│
 ├── Features/
-│   ├── SchemaExtractor/
-│   │   ├── Models/
-│   │   │   ├── TableSchema.cs
-│   │   │   ├── ColumnSchema.cs
-│   │   │   └── RelationshipSchema.cs
+│   ├── Schema/                         # PostgreSQL schema extraction
 │   │   ├── Dtos/
-│   │   │   └── ColumnQueryResult.cs
+│   │   ├── Models/                     # ColumnSchema, TableSchema, RelationshipSchema
 │   │   └── Services/
-│   │       ├── SchemaExtractorService.cs
-│   │       ├── SchemaBuilderService.cs
-│   │       ├── RelationshipGraphService.cs
-│   │       └── RetrieverService.cs
-│   ├── Ai/
-│   │   ├── Models/
-│   │   │   └── EmbeddingModel.cs
+│   │       ├── ISchemaExtractorService / SchemaExtractorService
+│   │       ├── ISchemaBuilderService   / SchemaBuilderService
+│   │       └── IRelationshipGraphService / RelationshipGraphService
+│   │
+│   ├── VectorStore/                    # pgvector embedding storage & retrieval
+│   │   ├── Models/                     # EmbeddingModel, VectorSearchResult
 │   │   └── Services/
-│   │       ├── AiService.cs
-│   │       ├── EmbeddingService.cs
-│   │       ├── VectorDatabaseService.cs
-│   │       ├── PromptBuilderService.cs
-│   │       ├── SqlValidatorService.cs
-│   │       ├── ExecutionService.cs
-│   │       └── QueryOrchestrationService.cs
+│   │       └── IVectorStoreService     / VectorStoreService
+│   │
+│   └── Query/                          # Text-to-SQL pipeline
+│       ├── Dtos/                       # QueryRequest, QueryResponse
+│       ├── Models/                     # TextToSqlResult, ExecutionResult
+│       └── Services/
+│           ├── IRetrieverService       / RetrieverService
+│           ├── IPromptBuilderService   / PromptBuilderService
+│           ├── ISqlValidatorService    / SqlValidatorService
+│           ├── IQueryExecutionService  / QueryExecutionService
+│           └── IQueryOrchestrationService / QueryOrchestrationService
+│
+├── Infrastructure/
+│   ├── AI/                             # LLM / embedding adapters
+│   │   ├── IAiCompletionService        / LlamaCompletionService
+│   │   └── IEmbeddingService           / LlamaEmbeddingService
+│   ├── Configuration/
+│   │   └── LlamaOptions.cs             # Strongly-typed config (IOptions<T>)
+│   └── Middleware/
+│       └── GlobalExceptionHandlingMiddleware.cs
+│
 ├── Controllers/
-│   ├── QueryController.cs
-│   ├── TestController.cs
-│   ├── AiTestController.cs
-│   └── AiController.cs
-├── Program.cs
-├── appsettings.json
-└── README.md
+│   ├── QueryController.cs              # POST /api/query  (production)
+│   ├── SchemaController.cs             # GET  /schema/*   (inspection)
+│   └── DiagnosticsController.cs        # POST /diagnostics/* (pipeline debug)
+│
+├── OpsPilotAI.Tests/                   # xUnit unit tests
+│   └── Unit/
+│       ├── SqlValidatorServiceTests.cs
+│       ├── QueryOrchestrationServiceTests.cs
+│       └── PromptBuilderServiceTests.cs
+│
+├── sql/
+│   └── 01_init.sql                     # pgvector + schema_embeddings table
+├── Dockerfile                          # Multi-stage, non-root user
+├── docker-compose.yml                  # db + app containers
+├── .env.example
+└── Program.cs
 ```
 
-### Component Details
-
-**SchemaExtractor Services:**
-- `SchemaExtractorService` - Extracts tables, columns, PKs, FKs from PostgreSQL
-- `SchemaBuilderService` - Generates AI-readable semantic documents
-- `RelationshipGraphService` - Builds and infers foreign key relationships
-- `RetrieverService` - Manages vector database population and retrieval
-
-**AI Services:**
-- `EmbeddingService` - Generates vector embeddings via llama.cpp
-- `VectorDatabaseService` - Stores/retrieves embeddings from PostgreSQL pgvector
-- `PromptBuilderService` - Constructs structured prompts with relevant schema
-- `AiService` - Calls LLM (Qwen2.5-Coder) for SQL generation
-- `SqlValidatorService` - Validates query safety
-- `ExecutionService` - Executes validated SQL against PostgreSQL
-- `QueryOrchestrationService` - Orchestrates the complete pipeline
+---
 
 ## Getting Started
 
 ### Prerequisites
 
-Ensure you have the following installed and running:
+| Requirement | Version |
+|-------------|---------|
+| .NET SDK | 10.0+ |
+| Docker + Docker Compose | Latest |
+| llama.cpp HTTP server | Any compatible build |
+| Models | `qwen2.5-coder` (SQL), `nomic-embed-text` (embeddings) |
 
-1. **PostgreSQL 14+**
-   - Must have pgvector extension installed
-   - Run: `CREATE EXTENSION IF NOT EXISTS vector;`
-   - Sample database: opspilotdb
+---
 
-2. **llama.cpp** (for AI inference)
-   - Configure a llama.cpp-compatible HTTP API endpoint for model inference
-   - Required models:
-     - `qwen2.5-coder` - SQL generation
-     - `nomic-embed-text` - Text embeddings (768 dimensions)
+### Option A — Docker Compose (recommended)
 
-3. **.NET 10 SDK**
-   - VSCode or Visual Studio recommended
+Starts PostgreSQL **and** the application together.
 
-### Installation & Setup
+```bash
+# 1. Copy environment file
+cp .env.example .env
 
-1. **Clone/Download the project**
-   ```bash
-   cd OpsPilotAI
-   ```
+# 2. Edit .env if you need different credentials or ports
+#    Also set LLAMA_SQL_BASE_URL / LLAMA_EMBEDDING_BASE_URL to your llama.cpp host
 
-2. **Configure Database Connection**
-   
-   Edit `appsettings.json` and `appsettings.Development.json` to use the local Docker host port:
-   ```json
-   {
-     "ConnectionStrings": {
-       "DefaultConnection": "Host=localhost;Port=5433;Database=opspilotdb;Username=opspilot;Password=opspilot_pass"
-     },
-     "Llama": {
-       "SqlBaseUrl": "http://127.0.0.1:8080",
-       "EmbeddingBaseUrl": "http://127.0.0.1:8081",
-       "SqlModel": "qwen2.5-coder",
-       "EmbeddingModel": "nomic-embed-text"
-     }
-   }
-   ```
+# 3. Start everything
+docker compose up -d
 
-3. **Initialize Vector Database**
-   
-   If you are running Postgres via Docker Compose, the `sql/01_init.sql` script runs automatically on first boot. Otherwise, run:
-   ```bash
-   psql -U opspilot -d opspilotdb -f sql/01_init.sql
-   ```
+# 4. Seed the vector database (first run only)
+curl -X POST http://localhost:5010/diagnostics/populate-vector-db
 
-4. **Start your llama.cpp service**
-   - Launch your llama.cpp HTTP API server according to your wrapper implementation.
-   - Ensure the service is reachable at the URL configured in `appsettings.json`.
-
-5. **Run the Application**
-   ```bash
-   dotnet run
-   ```
-   
-   API will start at: `http://localhost:5000` (or configured port)
-
-## API Endpoints
-
-### Main Production Endpoint
-
-**POST /api/query** - Execute natural language query
-```json
-{
-  "question": "How many films are in the Action category?"
-}
+# 5. Run a query
+curl -X POST http://localhost:5010/api/query \
+     -H "Content-Type: application/json" \
+     -d '{"question": "How many films are in the Action category?"}'
 ```
 
-Response:
-```json
-{
-  "question": "How many films are in the Action category?",
-  "sql": "SELECT COUNT(*) FROM film WHERE film_id IN (SELECT film_id FROM film_category WHERE category_id = (SELECT category_id FROM category WHERE name = 'Action'))",
-  "results": [[64]],
-  "success": true
-}
+---
+
+### Option B — Run locally (.NET CLI)
+
+```bash
+# 1. Start only the database
+cp .env.example .env
+docker compose up -d db
+
+# 2. Configure appsettings.Development.json
+#    (connection string + llama.cpp URLs are pre-filled for local defaults)
+
+# 3. Restore and run
+dotnet restore
+dotnet run
+
+# API starts at http://localhost:5010
 ```
 
-### Test & Debug Endpoints
+---
 
-**Schema Information:**
-- `GET /test/tables` - List all tables
-- `GET /test/columns/{table}` - Get columns for a table
-- `GET /test/relationships` - View all relationships
-- `GET /test/schema` - Get full schema
-- `GET /test/semantic` - Get semantic documents
-- `GET /test/graph` - Get relationship graph
+### Configuration
 
-**Vector Retrieval:**
-- `GET /aitest/retrieve?query=...` - Retrieve top-5 relevant tables for a query
-- `POST /aitest/populate-vector-db` - Populate the vector database from current schema
+All settings live in `appsettings.json` (defaults) and `appsettings.Development.json` (overrides).
 
-**Query Building & Validation:**
-- `POST /aitest/prompt` - Build prompt (body: `{"question":"..."}`)
-- `POST /aitest/generate-sql` - Generate SQL (body: `{"question":"..."}`)
-- `POST /aitest/validate-sql` - Validate SQL (body: `{"sql":"..."}`)
-- `POST /aitest/execute` - Execute SQL (body: `{"sql":"..."}`)
-
-## How It Works
-
-### Query Processing Pipeline
-
-```
-User Question
-    ↓
-Embedding Lookup (Vector DB)
-    ↓
-Retrieve Relevant Tables
-    ↓
-Build Schema-Aware Prompt
-    ↓
-Generate SQL (LLM)
-    ↓
-Validate Query Safety
-    ↓
-Execute Against Database
-    ↓
-Return Results
-```
-
-1. **Retrieval** - User question is embedded and compared against schema vectors to find relevant tables
-2. **Prompt Building** - Only relevant schema is included in the prompt to the LLM
-3. **Generation** - Qwen2.5-Coder generates SQL based on the prompt and schema context
-4. **Validation** - SqlValidatorService checks for dangerous operations (DELETE, DROP, etc.)
-5. **Execution** - Safe SQL is executed against PostgreSQL using Dapper
-6. **Response** - Results are returned to the user
-
-## Configuration
-
-### appsettings.json
-
-```json
+```jsonc
 {
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Port=5433;Database=opspilotdb;Username=opspilot;Password=opspilot_pass"
   },
   "Llama": {
     "SqlBaseUrl": "http://127.0.0.1:8080",
-    "SqlEndpointPath": "v1/completions",
+    "SqlEndpointPath": "v1/completions",       // llama.cpp completion endpoint
     "EmbeddingBaseUrl": "http://127.0.0.1:8081",
+    "EmbeddingEndpointPath": "v1/embeddings",  // llama.cpp embedding endpoint
     "SqlModel": "qwen2.5-coder",
-    "EmbeddingModel": "nomic-embed-text"
+    "EmbeddingModel": "nomic-embed-text",
+    "SqlTimeoutSeconds": 300,
+    "EmbeddingTimeoutSeconds": 120
   }
 }
 ```
 
-## Dependencies
+> All `Llama.*` values are validated at startup with `ValidateOnStart()`. The app refuses to start if any required field is missing.
 
-- **Dapper** - Lightweight ORM for database access
-- **Npgsql** - PostgreSQL .NET data provider
-- **System.Net.Http.Json** - JSON serialization for HTTP requests
+---
 
-Install via:
-```bash
-dotnet add package Dapper
-dotnet add package Npgsql
+## API Endpoints
+
+### Production
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/query` | Run a natural language query end-to-end |
+| `GET` | `/healthz` | Health check (PostgreSQL probe) |
+
+**POST /api/query — request**
+```json
+{ "question": "How many films are in the Action category?" }
 ```
 
-## Key Design Decisions
+**POST /api/query — response**
+```json
+{
+  "success": true,
+  "question": "How many films are in the Action category?",
+  "sql": "SELECT COUNT(*) FROM film f JOIN film_category fc ON f.film_id = fc.film_id JOIN category c ON fc.category_id = c.category_id WHERE c.name = 'Action' LIMIT 100;",
+  "results": [{ "count": 64 }],
+  "rowCount": 1,
+  "executionTimeMs": 42
+}
+```
+
+---
+
+### Schema Inspection
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/schema/tables` | List all public tables |
+| `GET` | `/schema/columns/{table}` | Columns for a specific table |
+| `GET` | `/schema/relationships` | All FK relationships |
+| `GET` | `/schema/full` | Full extracted schema |
+| `GET` | `/schema/semantic` | AI-readable semantic documents |
+| `GET` | `/schema/graph` | Relationship graph (including inferred FKs) |
+
+---
+
+### Pipeline Diagnostics
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/diagnostics/populate-vector-db` | Embed all tables and store in pgvector |
+| `GET` | `/diagnostics/retrieve?query=&topK=` | Test vector retrieval for a query |
+| `POST` | `/diagnostics/prompt` | Preview the LLM prompt for a question |
+| `POST` | `/diagnostics/validate-sql` | Test SQL safety validation |
+| `POST` | `/diagnostics/execute` | Execute raw SQL (validated before running) |
+
+---
+
+## How It Works
+
+```
+User Question
+    │
+    ▼
+[1] Embed question            IEmbeddingService → LlamaEmbeddingService
+    │
+    ▼
+[2] Vector search             IVectorStoreService → pgvector cosine similarity
+    │  top-K most relevant tables
+    ▼
+[3] Build prompt              IPromptBuilderService
+    │  schema context + rules injected
+    ▼
+[4] Generate SQL              IAiCompletionService → LlamaCompletionService
+    │  Qwen2.5-Coder via llama.cpp
+    ▼
+[5] Validate SQL              ISqlValidatorService
+    │  blocks DELETE/DROP/ALTER etc., enforces LIMIT
+    ▼
+[6] Execute                   IQueryExecutionService → Dapper → PostgreSQL
+    │
+    ▼
+JSON response
+```
+
+Each stage failure raises a `PipelineException`, which the global middleware maps to **HTTP 422 Unprocessable Entity** with a clear message — no stack trace leaks in production.
+
+---
+
+## Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| RAG Architecture | Reduces context size, improves accuracy, speeds up inference |
-| Semantic Indexing | Schema documents make vector search more meaningful |
-| pgvector instead of external DB | Keeps all data in PostgreSQL for simplicity |
-| SQL Validation | Prevents accidental or malicious database modifications |
-| Stateless Services | Enables horizontal scaling without session management |
-| Separate Test Endpoints | Allows debugging/validation without affecting production |
+| RAG architecture | Keeps LLM prompts small and focused — only relevant tables included |
+| pgvector for embeddings | No extra infrastructure; everything stays in PostgreSQL |
+| Interfaces on every service | Enables unit testing with Moq; allows swapping backends (e.g. OpenAI instead of llama.cpp) |
+| `IOptions<LlamaOptions>` + `ValidateOnStart` | Bad configuration fails at startup, not at first request |
+| `PipelineException` + 422 | Clear user-facing errors without exposing internals |
+| Singletons for stateless services | `SqlValidatorService` and `PromptBuilderService` are never re-allocated |
+| Polly resilience on HTTP clients | LLM inference is unreliable; 2 automatic retries before giving up |
+| Single batched schema query | Eliminates N+1 round-trips (was 1+N queries for N tables at startup) |
+| `[GeneratedRegex]` on validator | Regex patterns compiled at build time, not per-call |
 
-## Development Notes
+---
 
-- Schema is cached in memory with 10-minute TTL for performance
-- Vector embeddings are computed once during initialization
-- Each query performs fresh vector similarity search
-- All schema extraction happens on app startup
+## Running Tests
+
+```bash
+cd OpsPilotAI.Tests
+dotnet test --verbosity normal
+```
+
+Tests cover `SqlValidatorService` (safety rules), `QueryOrchestrationService` (pipeline logic), and `PromptBuilderService` (prompt construction) — all using Moq with zero real dependencies.
+
+---
 
 ## Troubleshooting
 
-### Docker (WSL): Postgres + pgvector
+**App refuses to start — "Llama SQL model is not configured"**
+- Verify the `Llama` section exists in `appsettings.json` with all required fields.
 
-If you run PostgreSQL inside Docker on WSL, here's a minimal setup and troubleshooting notes used by this project.
+**`/diagnostics/populate-vector-db` returns an error**
+- Ensure llama.cpp is running and reachable at the configured embedding URL.
+- Check `docker compose logs app` for the actual exception.
 
-- Start the database (run from the project root in WSL):
+**Vector search returns no results**
+- Run `POST /diagnostics/populate-vector-db` first; the vector DB is empty on a fresh install.
+- If pgvector extension is missing: `docker compose exec db psql -U opspilot -d opspilotdb -c "CREATE EXTENSION vector;"`
 
-```bash
-cp .env.example .env
-# edit .env if you change credentials
-docker compose up -d
-```
+**Need to re-run the SQL init script**
+- The init script only runs on a fresh volume. To replay it:
+  ```bash
+  docker compose down -v   # destroys the opspilot_pgdata volume
+  docker compose up -d
+  ```
 
-- Check container status and logs:
+**llama.cpp connection timeout**
+- Increase `Llama:SqlTimeoutSeconds` in `appsettings.json` (default: 300s).
+- Verify `LLAMA_SQL_BASE_URL` in `.env` points to your llama.cpp server.
 
-```bash
-docker compose ps
-docker compose logs -f db
-```
-
-- Verify pgvector is installed and the init script ran:
-
-```bash
-docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT extname FROM pg_extension;"
-docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "\dt"
-```
-
-- Notes:
-  - The init script `sql/01_init.sql` runs only when the DB data directory is initialized. If you change the SQL and need it re-run, remove the `opspilot_pgdata` volume and run `docker compose down` and `docker compose up -d` to recreate the container and re-run initialization.
-  - Ensure your WSL distro has access to Docker (Docker Desktop WSL backend or Docker in WSL). If using Docker Desktop, confirm the WSL integration is enabled.
-  - Update the connection string in `appsettings.Development.json` and `appsettings.json` if you change credentials, host, or port.
-
-**Issue: Connection refused to PostgreSQL**
-- Ensure PostgreSQL is running: `sudo systemctl start postgresql`
-- Verify connection string in `appsettings.json`
-
-**Issue: llama.cpp connection failed**
-- Ensure your llama.cpp HTTP API service is running
-- Verify the configured model is available on that server
-- Check `Llama:SqlBaseUrl` and `Llama:EmbeddingBaseUrl` match your service endpoints
-
-**Issue: Vectors not retrieving results**
-- Ensure `sql/01_init.sql` was executed
-- Check pgvector extension is installed: `CREATE EXTENSION vector;`
-- Populate vector DB: `POST /aitest/populate-vector-db`
-
-**Issue: SQL generation is inaccurate**
-- Review /aitest/retrieve to see which tables were selected
-- Check /test/semantic to verify schema documentation
-- Review the generated prompt: `POST /aitest/prompt`
+---
 
 ## Future Enhancements
 
-- [ ] Query result caching for frequently asked questions
-- [ ] Query execution timeout handling
-- [ ] Request logging and telemetry
-- [ ] Multi-database support
-- [ ] SQL query formatting before execution
-- [ ] Result pagination for large datasets
-- [ ] Role-based schema filtering
-- [ ] Query performance optimization suggestions
+- [ ] Authentication / RBAC (architecture is auth-ready — plug middleware into the pipeline)
+- [ ] Query result caching for repeated questions
+- [ ] Streaming SQL generation responses
+- [ ] Multi-database support (connection-per-tenant)
+- [ ] Result pagination
+- [ ] OpenTelemetry traces for the full pipeline
+- [ ] SQL formatting before display
+- [ ] Admin UI for vector DB management
+
+---
 
 ## License
 
 This project is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for details.
 
-```
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
-
-<!-- ## Contributing
-
-[Add contribution guidelines here] -->
-
 ---
 
-**Questions or Issues?** Please file an issue in the repository or contact the development team.
+**Questions or Issues?** Please file an issue in the repository.
