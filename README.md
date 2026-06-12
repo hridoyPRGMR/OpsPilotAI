@@ -142,21 +142,68 @@ curl -X POST http://localhost:5010/api/query \
 
 ---
 
-### Option B — Run locally (.NET CLI)
+### Run Locally (development)
+
+#### Prerequisites
+- .NET 10 SDK installed
+- Docker (for running PostgreSQL) or a local PostgreSQL instance
+- A running llama.cpp HTTP server and required models (`qwen2.5-coder`, `nomic-embed-text`)
+
+#### Quick start (DB via Docker, app locally)
+1. Copy and edit env:
+```bash
+cp .env.example .env
+# edit .env to set POSTGRES_* and LLAMA_* URLs if needed
+```
+
+2. Start only the database:
+```bash
+docker compose up -d db
+```
+
+Note: the `docker-compose.yml` uses the `pgvector/pgvector:pg15` image so the `pgvector` extension is available in the container. If you run PostgreSQL manually instead of via Docker, install and enable the `pgvector` extension in your database before seeding or running queries:
 
 ```bash
-# 1. Start only the database
-cp .env.example .env
-docker compose up -d db
+# inside psql as a superuser (or via docker exec):
+CREATE EXTENSION IF NOT EXISTS vector;
 
-# 2. Configure appsettings.Development.json
-#    (connection string + llama.cpp URLs are pre-filled for local defaults)
+# or using docker-compose (substitute env values if needed):
+docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
 
-# 3. Restore and run
-dotnet restore
-dotnet run
+3. Restore and run the API (development):
+- macOS / Linux:
+```bash
+ASPNETCORE_URLS=http://localhost:5010 dotnet run --project OpsPilotAI.csproj
+```
+- PowerShell:
+```powershell
+$env:ASPNETCORE_URLS='http://localhost:5010'; dotnet run --project OpsPilotAI.csproj
+```
 
-# API starts at http://localhost:5010
+4. Ensure llama.cpp endpoints are reachable (match `.env` or `appsettings.Development.json`):
+- `LLAMA_SQL_BASE_URL` — completion server
+- `LLAMA_EMBEDDING_BASE_URL` — embedding server
+
+5. Seed vector DB (first run only):
+```bash
+curl -X POST http://localhost:5010/diagnostics/populate-vector-db
+```
+
+6. Test a query:
+```bash
+curl -X POST http://localhost:5010/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"question":"How many films are in the Action category?"}'
+```
+
+#### Notes
+- If you prefer to run DB and app together, use `docker compose up --build`.
+- To replay the SQL init script, remove the volume: `docker compose down -v` then `docker compose up -d`.
+- Run tests:
+```bash
+cd OpsPilotAI.Tests
+dotnet test
 ```
 
 ---
