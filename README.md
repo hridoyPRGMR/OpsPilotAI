@@ -4,7 +4,7 @@
 
 **OpsPilotAI** is a production-grade Text-to-SQL platform that converts natural language questions into executable SQL queries using AI. It uses a Retrieval-Augmented Generation (RAG) pipeline backed by PostgreSQL pgvector for semantic schema retrieval, and llama.cpp for local LLM inference — no cloud dependency required.
 
-![Screenshot](Shared\Images\screenshot.png)
+<img width="1130" height="700" alt="screenshot" src="https://github.com/user-attachments/assets/d087659e-0a65-4930-be7d-bdf50bc374da" />
 
 ### Project Goals
 
